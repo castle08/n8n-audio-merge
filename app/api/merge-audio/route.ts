@@ -40,7 +40,7 @@ async function writeConcatList(ff: FFmpeg, files: string[]) {
   await ff.writeFile("list.txt", new TextEncoder().encode(lines));
 }
 
-export async function POST(req: NextRequest): Promise<Response> {
+export async function POST(req: NextRequest): Promise<NextResponse> {
   let payload: any;
   try {
     payload = await req.json();
