@@ -12,13 +12,9 @@
   "keywords": [],
   "author": "",
   "license": "ISC",
-  "dependencies": {
-    "@ffmpeg/ffmpeg": "^0.12.15",
-    "@ffmpeg/util": "^0.12.2"
-  },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20240808.0",
     "typescript": "^5.5.4",
-    "wrangler": "^3.0.0"
+    "wrangler": "^4.28.1"
   }
 }
