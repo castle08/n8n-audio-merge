@@ -1,8 +1,1 @@
-{
-    "functions": {
-      "app/api/merge-audio/route.ts": {
-        "maxDuration": 60,
-        "memory": 1536
-      }
-    }
-  }
+{}
