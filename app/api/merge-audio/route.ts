@@ -1,17 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { FFmpeg } from "@ffmpeg/ffmpeg";
-import { fetchFile, toBlobURL } from "@ffmpeg/util";
+import { toBlobURL } from "@ffmpeg/util";
 
-// Lazy, shared ffmpeg instance across invocations
 let ffmpeg: FFmpeg | null = null;
 let ffmpegReady = false;
 
 async function getFFmpeg() {
-  if (!ffmpeg) {
-    ffmpeg = new FFmpeg();
-  }
+  if (!ffmpeg) ffmpeg = new FFmpeg();
   if (!ffmpegReady) {
-    // Load ffmpeg.wasm core from CDN
     const baseURL = "https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd";
     await ffmpeg.load({
       coreURL: await toBlobURL(`${baseURL}/ffmpeg-core.js`, "text/javascript"),
@@ -22,17 +18,26 @@ async function getFFmpeg() {
   return ffmpeg!;
 }
 
-// accepts both dataUri and dataBase64; returns raw base64
 function normalizeBase64(input: string) {
   if (!input) return "";
   const m = input.match(/^data:[^;]+;base64,(.*)$/);
   return m ? m[1] : input;
 }
 
-// Writes list.txt for concat demuxer
-async function writeConcatList(ffmpeg: FFmpeg, files: string[]) {
+function getExtensionFromDataUri(dataUri: string, fallback = "mp3") {
+  const m = dataUri.match(/^data:audio\/([a-zA-Z0-9+]+);base64,/);
+  if (m && m[1]) {
+    let ext = m[1].toLowerCase();
+    if (ext === "mpeg") return "mp3";
+    if (ext === "x-wav") return "wav";
+    return ext;
+  }
+  return fallback;
+}
+
+async function writeConcatList(ff: FFmpeg, files: string[]) {
   const lines = files.map((f) => `file '${f}'`).join("\n");
-  await ffmpeg.writeFile("list.txt", new TextEncoder().encode(lines));
+  await ff.writeFile("list.txt", new TextEncoder().encode(lines));
 }
 
 export async function POST(req: NextRequest) {
@@ -51,54 +56,54 @@ export async function POST(req: NextRequest) {
   try {
     const ff = await getFFmpeg();
 
-    // Clean FS from previous run (best-effort)
     try { await ff.deleteFile("list.txt"); } catch {}
     try { await ff.deleteFile("output.mp3"); } catch {}
 
-    // Sort by timing if provided
     audioSegments.sort((a: any, b: any) => (a.startMs ?? 0) - (b.startMs ?? 0));
 
-    // Write all clips to ffmpeg FS as MP3s
     const fileNames: string[] = [];
+
     for (let i = 0; i < audioSegments.length; i++) {
       const seg = audioSegments[i];
       const b64 = normalizeBase64(seg.dataUri || seg.dataBase64);
       if (!b64) {
-        return NextResponse.json(
-          { error: "Segment missing base64 (dataUri or dataBase64)" },
-          { status: 400 }
-        );
+        return NextResponse.json({ error: `Segment ${i} missing base64` }, { status: 400 });
       }
-      const name = (seg.fileName || `seg_${i}.mp3`).toLowerCase().replace(/\s+/g, "_");
-      const fileName = name.endsWith(".mp3") ? name : name.replace(/\.\w+$/, "") + ".mp3";
 
-      const buf = Buffer.from(b64, "base64");
-      await ff.writeFile(fileName, new Uint8Array(buf));
+      let ext = "mp3";
+      if (seg.dataUri) ext = getExtensionFromDataUri(seg.dataUri);
+      else if (seg.fileName) ext = seg.fileName.split(".").pop()?.toLowerCase() || "mp3";
+
+      const fileName = `seg_${i}.${ext}`;
+      await ff.writeFile(fileName, new Uint8Array(Buffer.from(b64, "base64")));
       fileNames.push(fileName);
     }
 
-    // Concat with demuxer (no re-encode)
     await writeConcatList(ff, fileNames);
-    await ff.exec(["-f", "concat", "-safe", "0", "-i", "list.txt", "-c", "copy", "output.mp3"]);
+
+    // Force re-encode to MP3 so mixed formats won't fail
+    await ff.exec([
+      "-f", "concat",
+      "-safe", "0",
+      "-i", "list.txt",
+      "-ar", "44100",
+      "-ac", "2",
+      "-b:a", "192k",
+      "output.mp3"
+    ]);
 
     const out = await ff.readFile("output.mp3");
     const base64 = Buffer.from(out as Uint8Array).toString("base64");
 
-    return NextResponse.json(
-      {
-        ok: true,
-        mergedBase64: base64,
-        contentType: "audio/mpeg",
-        fileName: "podcast_final.mp3",
-        segmentCount: audioSegments.length
-      },
-      { status: 200, headers: { "Cache-Control": "no-store" } }
-    );
+    return NextResponse.json({
+      ok: true,
+      mergedBase64: base64,
+      contentType: "audio/mpeg",
+      fileName: "podcast_final.mp3",
+      segmentCount: audioSegments.length
+    });
   } catch (err: any) {
     console.error("merge failed:", err);
-    return NextResponse.json(
-      { error: "Failed to merge audio", details: String(err?.message || err) },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: "Failed to merge audio", details: String(err?.message || err) }, { status: 500 });
   }
 }
