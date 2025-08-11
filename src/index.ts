@@ -43,6 +43,25 @@ async function writeConcatList(ff: FFmpeg, files: string[]) {
   await ff.writeFile('list.txt', new TextEncoder().encode(lines));
 }
 
+// Convert base64 to Uint8Array for Cloudflare Workers
+function base64ToUint8Array(base64: string): Uint8Array {
+  const binaryString = atob(base64);
+  const bytes = new Uint8Array(binaryString.length);
+  for (let i = 0; i < binaryString.length; i++) {
+    bytes[i] = binaryString.charCodeAt(i);
+  }
+  return bytes;
+}
+
+// Convert Uint8Array to base64 for Cloudflare Workers
+function uint8ArrayToBase64(bytes: Uint8Array): string {
+  let binary = '';
+  for (let i = 0; i < bytes.byteLength; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  return btoa(binary);
+}
+
 export default {
   async fetch(request: Request, env: any, ctx: any): Promise<Response> {
     // Handle CORS
@@ -121,7 +140,7 @@ export default {
         else if (seg.fileName) ext = seg.fileName.split('.').pop()?.toLowerCase() || 'mp3';
 
         const fileName = `seg_${i}.${ext}`;
-        const buf = new Uint8Array(Buffer.from(b64, 'base64'));
+        const buf = base64ToUint8Array(b64);
         await ff.writeFile(fileName, buf);
         fileNames.push(fileName);
       }
@@ -131,7 +150,7 @@ export default {
       await ff.exec(['-f', 'concat', '-safe', '0', '-i', 'list.txt', '-c', 'copy', 'output.mp3']);
 
       const out = await ff.readFile('output.mp3');
-      const base64 = Buffer.from(out as Uint8Array).toString('base64');
+      const base64 = uint8ArrayToBase64(out as Uint8Array);
 
       return new Response(JSON.stringify({
         ok: true,
