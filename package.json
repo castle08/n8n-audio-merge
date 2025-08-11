@@ -2,26 +2,23 @@
   "name": "n8n-audio-merge",
   "version": "1.0.0",
   "private": true,
-  "description": "Simple Next.js API to merge audio segments via ffmpeg.wasm for n8n",
+  "description": "Cloudflare Workers API to merge audio segments via ffmpeg.wasm for n8n",
+  "main": "src/index.ts",
   "scripts": {
-    "dev": "next dev",
-    "build": "next build",
-    "start": "next start"
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "deploy:staging": "wrangler deploy --env staging"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
-  "type": "module",
   "dependencies": {
-    "@ffmpeg-installer/ffmpeg": "^1.1.0",
-    "audio-buffer-utils": "^5.1.2",
-    "next": "^14.2.31",
-    "react": "^18.3.1",
-    "react-dom": "^18.3.1"
+    "@ffmpeg/ffmpeg": "^0.12.15",
+    "@ffmpeg/util": "^0.12.2"
   },
   "devDependencies": {
-    "@types/node": "^20.14.9",
-    "@types/react": "19.1.9",
-    "typescript": "^5.5.4"
+    "@cloudflare/workers-types": "^4.20240808.0",
+    "typescript": "^5.5.4",
+    "wrangler": "^3.0.0"
   }
 }
