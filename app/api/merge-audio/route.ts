@@ -1,22 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { FFmpeg } from "@ffmpeg/ffmpeg";
-import { toBlobURL } from "@ffmpeg/util";
-
-let ffmpeg: FFmpeg | null = null;
-let ffmpegReady = false;
-
-async function getFFmpeg() {
-  if (!ffmpeg) ffmpeg = new FFmpeg();
-  if (!ffmpegReady) {
-    const baseURL = "https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd";
-    await ffmpeg.load({
-      coreURL: await toBlobURL(`${baseURL}/ffmpeg-core.js`, "text/javascript"),
-      wasmURL: await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, "application/wasm"),
-    });
-    ffmpegReady = true;
-  }
-  return ffmpeg!;
-}
+import ffmpeg from "fluent-ffmpeg";
+import { writeFile, unlink, readFile } from "fs/promises";
+import { join } from "path";
+import { tmpdir } from "os";
 
 function normalizeBase64(input: string) {
   if (!input) return "";
@@ -35,11 +21,6 @@ function getExtensionFromDataUri(dataUri: string, fallback = "mp3") {
   return fallback;
 }
 
-async function writeConcatList(ff: FFmpeg, files: string[]) {
-  const lines = files.map((f) => `file '${f}'`).join("\n");
-  await ff.writeFile("list.txt", new TextEncoder().encode(lines));
-}
-
 export async function POST(req: NextRequest): Promise<NextResponse> {
   let payload: any;
   try {
@@ -53,16 +34,14 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ error: "audioSegments array required" }, { status: 400 });
   }
 
+  const tempFiles: string[] = [];
+  const outputFile = join(tmpdir(), `output_${Date.now()}.mp3`);
+
   try {
-    const ff = await getFFmpeg();
-
-    try { await ff.deleteFile("list.txt"); } catch {}
-    try { await ff.deleteFile("output.mp3"); } catch {}
-
+    // Sort by timing if provided
     audioSegments.sort((a: any, b: any) => (a.startMs ?? 0) - (b.startMs ?? 0));
 
-    const fileNames: string[] = [];
-
+    // Write all audio segments to temporary files
     for (let i = 0; i < audioSegments.length; i++) {
       const seg = audioSegments[i];
       const b64 = normalizeBase64(seg.dataUri || seg.dataBase64);
@@ -74,26 +53,46 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       if (seg.dataUri) ext = getExtensionFromDataUri(seg.dataUri);
       else if (seg.fileName) ext = seg.fileName.split(".").pop()?.toLowerCase() || "mp3";
 
-      const fileName = `seg_${i}.${ext}`;
-      await ff.writeFile(fileName, new Uint8Array(Buffer.from(b64, "base64")));
-      fileNames.push(fileName);
+      const tempFile = join(tmpdir(), `seg_${i}_${Date.now()}.${ext}`);
+      await writeFile(tempFile, Buffer.from(b64, "base64"));
+      tempFiles.push(tempFile);
     }
 
-    await writeConcatList(ff, fileNames);
+    // Create a concat file for ffmpeg
+    const concatFile = join(tmpdir(), `concat_${Date.now()}.txt`);
+    const concatContent = tempFiles.map(file => `file '${file}'`).join('\n');
+    await writeFile(concatFile, concatContent);
+    tempFiles.push(concatFile);
 
-    // Force re-encode to MP3 so mixed formats won't fail
-    await ff.exec([
-      "-f", "concat",
-      "-safe", "0",
-      "-i", "list.txt",
-      "-ar", "44100",
-      "-ac", "2",
-      "-b:a", "192k",
-      "output.mp3"
-    ]);
+    // Merge audio files using ffmpeg
+    await new Promise<void>((resolve, reject) => {
+      ffmpeg()
+        .input(concatFile)
+        .inputOptions(['-f', 'concat', '-safe', '0'])
+        .outputOptions([
+          '-ar', '44100',
+          '-ac', '2',
+          '-b:a', '192k'
+        ])
+        .output(outputFile)
+        .on('end', () => resolve())
+        .on('error', (err) => reject(err))
+        .run();
+    });
 
-    const out = await ff.readFile("output.mp3");
-    const base64 = Buffer.from(out as Uint8Array).toString("base64");
+    // Read the merged file and convert to base64
+    const mergedBuffer = await readFile(outputFile);
+    const base64 = mergedBuffer.toString('base64');
+
+    // Clean up temporary files
+    for (const file of tempFiles) {
+      try {
+        await unlink(file);
+      } catch {}
+    }
+    try {
+      await unlink(outputFile);
+    } catch {}
 
     return NextResponse.json({
       ok: true,
@@ -102,8 +101,23 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       fileName: "podcast_final.mp3",
       segmentCount: audioSegments.length
     });
+
   } catch (err: any) {
     console.error("merge failed:", err);
-    return NextResponse.json({ error: "Failed to merge audio", details: String(err?.message || err) }, { status: 500 });
+    
+    // Clean up temporary files on error
+    for (const file of tempFiles) {
+      try {
+        await unlink(file);
+      } catch {}
+    }
+    try {
+      await unlink(outputFile);
+    } catch {}
+
+    return NextResponse.json({ 
+      error: "Failed to merge audio", 
+      details: String(err?.message || err) 
+    }, { status: 500 });
   }
 }
