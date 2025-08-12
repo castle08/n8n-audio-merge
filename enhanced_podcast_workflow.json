@@ -1,0 +1,302 @@
+{
+  "name": "Enhanced Strategic Trends Podcast",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours",
+              "hoursInterval": 168
+            }
+          ]
+        }
+      },
+      "id": "weekly-trigger",
+      "name": "Weekly Intelligence Update",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [-224, 608]
+    },
+    {
+      "parameters": {
+        "numberInputs": 5
+      },
+      "id": "merge-rss",
+      "name": "Merge RSS Sources",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [224, 560]
+    },
+    {
+      "parameters": {
+        "url": "https://www.campaignlive.co.uk/rss/news",
+        "options": {}
+      },
+      "id": "campaignlive-news",
+      "name": "campaignlive - news",
+      "type": "n8n-nodes-base.rssFeedRead",
+      "typeVersion": 1.2,
+      "position": [0, 224]
+    },
+    {
+      "parameters": {
+        "url": "https://www.campaignlive.co.uk/rss/latest",
+        "options": {}
+      },
+      "id": "campaignlive-latest",
+      "name": "campaignlive - latest",
+      "type": "n8n-nodes-base.rssFeedRead",
+      "typeVersion": 1.2,
+      "position": [0, 416]
+    },
+    {
+      "parameters": {
+        "url": "https://www.adweek.com/feed/",
+        "options": {}
+      },
+      "id": "adweek",
+      "name": "adweek",
+      "type": "n8n-nodes-base.rssFeedRead",
+      "typeVersion": 1.2,
+      "position": [0, 608]
+    },
+    {
+      "parameters": {
+        "url": "https://www.reddit.com/r/advertising/.rss",
+        "options": {}
+      },
+      "id": "reddit-advertising",
+      "name": "reddit - advertising",
+      "type": "n8n-nodes-base.rssFeedRead",
+      "typeVersion": 1.2,
+      "position": [0, 800]
+    },
+    {
+      "parameters": {
+        "url": "https://www.reddit.com/r/marketing/.rss",
+        "options": {}
+      },
+      "id": "reddit-marketing",
+      "name": "reddit - marketing",
+      "type": "n8n-nodes-base.rssFeedRead",
+      "typeVersion": 1.2,
+      "position": [0, 992]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Enhanced RSS formatting with better content analysis\nconst inputItems = $input.all();\nlet allArticles = [];\n\n// Flatten all RSS outputs into single array\nfor (const item of inputItems) {\n  if (Array.isArray(item.json?.items)) {\n    allArticles = allArticles.concat(item.json.items);\n  } else if (item.json) {\n    allArticles.push(item.json);\n  }\n}\n\n// Enhanced article processing with sentiment and topic analysis\nconst formattedArticles = [];\nconst seenTitles = new Set();\nconst topics = new Map();\n\nfor (const article of allArticles) {\n  const title = (article.title || '').trim();\n  const summary = (article.description || article.contentSnippet || article.summary || '').replace(/<[^>]+>/g, '').trim();\n  const link = article.link || article.url || '';\n  \n  // Skip if no title or duplicate\n  if (!title || seenTitles.has(title.toLowerCase())) continue;\n  seenTitles.add(title.toLowerCase());\n  \n  // Determine source and extract topics\n  let source = 'Industry News';\n  if (link.includes('adweek')) source = 'Adweek';\n  else if (link.includes('campaignlive')) source = 'Campaign';\n  else if (link.includes('reddit')) source = 'Reddit';\n  \n  // Extract key topics from title and summary\n  const text = (title + ' ' + summary).toLowerCase();\n  const topicKeywords = {\n    'AI/Technology': ['ai', 'artificial intelligence', 'machine learning', 'automation', 'digital', 'tech'],\n    'Social Media': ['social media', 'facebook', 'instagram', 'tiktok', 'twitter', 'x', 'platform'],\n    'Data/Analytics': ['data', 'analytics', 'metrics', 'performance', 'roi', 'measurement'],\n    'Creative': ['creative', 'design', 'brand', 'campaign', 'advertising', 'marketing'],\n    'Consumer Behavior': ['consumer', 'customer', 'behavior', 'trend', 'preference', 'demographic']\n  };\n  \n  let primaryTopic = 'General';\n  for (const [topic, keywords] of Object.entries(topicKeywords)) {\n    if (keywords.some(keyword => text.includes(keyword))) {\n      primaryTopic = topic;\n      break;\n    }\n  }\n  \n  // Track topic frequency\n  topics.set(primaryTopic, (topics.get(primaryTopic) || 0) + 1);\n  \n  if (title.length > 10 && summary.length > 20) {\n    formattedArticles.push({\n      title: title,\n      summary: summary.substring(0, 250) + (summary.length > 250 ? '...' : ''),\n      source: source,\n      topic: primaryTopic,\n      url: link\n    });\n  }\n}\n\n// Sort by topic relevance and take most recent 20 articles\nconst recentArticles = formattedArticles.slice(0, 20);\n\n// Create topic summary\nconst topicSummary = Array.from(topics.entries())\n  .sort((a, b) => b[1] - a[1])\n  .slice(0, 3)\n  .map(([topic, count]) => `${topic} (${count} articles)`)\n  .join(', ');\n\n// Enhanced formatting for OpenAI\nconst formattedText = recentArticles.map((article, index) => \n  `${index + 1}. \"${article.title}\" (${article.source} - ${article.topic})\\n   ${article.summary}`\n).join('\\n\\n');\n\nconst summary = `Recent Marketing Industry Trends Analysis:\\n\\n📊 TOP TOPICS: ${topicSummary}\\n\\n📰 ARTICLES (${recentArticles.length} total):\\n\\n${formattedText}`;\n\nconsole.log(`📡 Enhanced formatting complete: ${recentArticles.length} articles`);\nconsole.log(`📊 Top topics: ${topicSummary}`);\nconsole.log(`📝 Text length: ${summary.length} characters`);\n\nreturn [{ json: { \n  formattedArticles: summary, \n  articleCount: recentArticles.length,\n  topicSummary: topicSummary,\n  articles: recentArticles\n} }];"
+      },
+      "id": "enhanced-rss-formatter",
+      "name": "Enhanced RSS Formatter",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [448, 608]
+    },
+    {
+      "parameters": {
+        "resource": "chat",
+        "model": "gpt-4o",
+        "prompt": {
+          "messages": [
+            {
+              "role": "system",
+              "content": "You are creating a natural, engaging conversational podcast script between two marketing professionals: Alex (analytical, data-driven, slightly skeptical) and Jamie (creative, optimistic, strategic thinker).\n\nCONVERSATION REQUIREMENTS:\n- Create realistic 3-5 minute conversation\n- Include natural interruptions, overlaps, and back-channel responses\n- Use conversational fillers: \"um\", \"you know\", \"exactly\", \"mm-hmm\", \"right\", \"I mean\"\n- Show natural agreement/disagreement patterns\n- Include thoughtful pauses and transitions\n- Make it sound like two real people having a genuine conversation\n\nSPEAKER PERSONALITIES:\nALEX: Analytical, data-focused, slightly skeptical, asks probing questions, references statistics\nJAMIE: Creative, optimistic, big-picture thinker, provides examples, builds on Alex's points\n\nFORMAT INSTRUCTIONS:\n- Use ALEX: and JAMIE: for main dialogue\n- Use [ALEX: mm-hmm] or [JAMIE: exactly] for back-channel responses\n- Use [overlapping] to show when speakers start before the other finishes\n- Mark interruptions with em-dashes (—)\n- Include natural pauses with [pause]\n\nEXAMPLE FORMAT:\nALEX: So the data shows that AI adoption is really accelerating—\nJAMIE: [overlapping] Exactly! And what's interesting is... [ALEX: mm-hmm] ...how it's completely changing creative workflows.\nALEX: Right, and the numbers back that up because—\nJAMIE: [agreeing] Mm-hmm, mm-hmm\nALEX: —we're seeing a 40% increase in automated content generation.\n\nKeep it engaging and professional for marketing professionals. OUTPUT ONLY the script dialogue - NO introductions or explanations."
+            },
+            {
+              "content": "=Create a natural conversational podcast script between Alex and Jamie discussing these marketing trends with realistic speech patterns, interruptions, and conversational fillers: {{ $json.formattedArticles }}"
+            }
+          ]
+        },
+        "options": {},
+        "requestOptions": {}
+      },
+      "id": "enhanced-script-generator",
+      "name": "Enhanced Script Generator",
+      "type": "n8n-nodes-base.openAi",
+      "typeVersion": 1,
+      "position": [672, 608],
+      "credentials": {
+        "openAiApi": {
+          "id": "EJ4bHf6JFSTiAvix",
+          "name": "OpenAi account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Enhanced script splitting with AssemblyAI-inspired timing optimization\nconst scriptContent = $input.first().json?.message?.content || $input.first().json?.content || '';\n\nif (!scriptContent) {\n  throw new Error('No script content found');\n}\n\nconsole.log('🎭 Processing enhanced script for natural conversation flow');\n\n// Normalize newlines\nconst normalizedScript = String(scriptContent)\n  .replace(/\\r\\n/g, '\\n')\n  .replace(/\\\\n/g, '\\n');\n\n// Enhanced voice processing with natural timing\nfunction processVoiceInstructions(text) {\n  return text\n    .replace(/\\(enthusiastically\\)/gi, '<emphasis level=\"strong\">')\n    .replace(/\\(excitedly\\)/gi, '<emphasis level=\"strong\">')\n    .replace(/\\(calmly\\)/gi, '<prosody rate=\"slow\">')\n    .replace(/\\(quickly\\)/gi, '<prosody rate=\"fast\">')\n    .replace(/\\(thoughtfully\\)/gi, '<break time=\"0.5s\">')\n    .replace(/\\(pause\\)/gi, '<break time=\"0.3s\">')\n    .replace(/\\([^)]*ly\\)/g, '')\n    .replace(/\\s+/g, ' ')\n    .trim();\n}\n\n// Enhanced timing constants for natural conversation\nconst VOICES = {\n  ALEX: 'pNInz6obpgDQGcFmaJgB',\n  JAMIE: 'EXAVITQu4vr4xnSDxMaL'\n};\n\nconst TIMING = {\n  WORDS_PER_SECOND: 2.3,           // Slightly slower for natural speech\n  OVERLAP_OFFSET: -0.4,            // More natural overlap timing\n  BACKCHANNEL_DURATION: 0.6,       // Longer back-channels\n  NATURAL_PAUSE: 0.2,              // Natural pause between speakers\n  INTERRUPTION_OFFSET: -0.2        // Timing for interruptions\n};\n\n// Parse script with enhanced conversation flow\nconst lines = normalizedScript.split('\\n');\nconst conversationSegments = [];\nlet currentTime = 0;\nlet segmentIndex = 0;\n\nfor (let i = 0; i < lines.length; i++) {\n  const rawLine = lines[i];\n  const line = rawLine.trim();\n  if (!line) continue;\n\n  // MAIN DIALOGUE: ALEX or JAMIE at the start of the line\n  const main = line.match(/^\\s*(ALEX|JAMIE)\\s*:\\s*(.*)$/i);\n  if (main) {\n    const S = main[1].toUpperCase();\n    let text = main[2].trim();\n\n    const isOverlapping = /\\[overlapping\\]/i.test(text);\n    const isInterrupted = /—/.test(text);\n    const hasPause = /\\[pause\\]/i.test(text);\n\n    // Extract inline back-channels\n    const inlineBCs = [...text.matchAll(/\\[(ALEX|JAMIE)\\s*:\\s*([^\\]]+)\\]/gi)];\n\n    // Clean text for TTS\n    text = text\n      .replace(/\\[(?:ALEX|JAMIE)\\s*:\\s*[^\\]]+\\]/gi, '')\n      .replace(/\\[overlapping\\]/gi, '')\n      .replace(/\\[pause\\]/gi, '')\n      .replace(/—+/g, '')\n      .trim();\n\n    text = processVoiceInstructions(text);\n\n    if (text) {\n      const wordCount = text\n        .replace(/<[^>]*>/g, '')\n        .split(/\\s+/)\n        .filter(Boolean).length;\n\n      const duration = wordCount / TIMING.WORDS_PER_SECOND;\n      let startTime = currentTime;\n\n      // Enhanced timing for natural conversation flow\n      if (isOverlapping) {\n        startTime = currentTime + TIMING.OVERLAP_OFFSET;\n      } else if (isInterrupted) {\n        startTime = currentTime + TIMING.INTERRUPTION_OFFSET;\n      } else if (hasPause) {\n        startTime = currentTime + TIMING.NATURAL_PAUSE;\n      }\n\n      conversationSegments.push({\n        segmentId: `${S.toLowerCase()}_${segmentIndex}`,\n        speaker: S === 'ALEX' ? 'Alex' : 'Jamie',\n        voiceId: S === 'ALEX' ? VOICES.ALEX : VOICES.JAMIE,\n        text,\n        startTime: Math.max(0, startTime),\n        duration,\n        segmentIndex,\n        isOverlapping,\n        isInterrupted,\n        hasPause,\n        type: 'main_dialogue',\n        wordCount\n      });\n\n      segmentIndex++;\n      currentTime = isOverlapping\n        ? Math.max(currentTime, startTime + duration)\n        : startTime + duration;\n    }\n\n    // Process inline back-channels\n    for (const m of inlineBCs) {\n      const bcS = m[1].toUpperCase();\n      const response = m[2].trim();\n      if (!response) continue;\n\n      conversationSegments.push({\n        segmentId: `${bcS.toLowerCase()}_backchannel_${segmentIndex}`,\n        speaker: bcS === 'ALEX' ? 'Alex' : 'Jamie',\n        voiceId: VOICES[bcS],\n        text: response,\n        startTime: Math.max(0, currentTime - 1.0),\n        duration: TIMING.BACKCHANNEL_DURATION,\n        segmentIndex: segmentIndex++,\n        isBackchannel: true,\n        type: 'backchannel'\n      });\n    }\n\n    continue;\n  }\n\n  // STANDALONE BACK-CHANNEL\n  const bc = line.match(/^\\s*\\[(ALEX|JAMIE)\\s*:\\s*([^\\]]+)\\]\\s*$/i);\n  if (bc) {\n    const S = bc[1].toUpperCase();\n    const response = bc[2].trim();\n    if (!response) continue;\n\n    conversationSegments.push({\n      segmentId: `${S.toLowerCase()}_backchannel_${segmentIndex}`,\n      speaker: S === 'ALEX' ? 'Alex' : 'Jamie',\n      voiceId: VOICES[S],\n      text: response,\n      startTime: Math.max(0, currentTime - 1.0),\n      duration: TIMING.BACKCHANNEL_DURATION,\n      segmentIndex: segmentIndex++,\n      isBackchannel: true,\n      type: 'backchannel'\n    });\n\n    continue;\n  }\n}\n\n// Sort by timing and add conversation flow metadata\nconversationSegments.sort((a, b) => a.startTime - b.startTime);\n\nconst stats = {\n  totalSegments: conversationSegments.length,\n  alexSegments: conversationSegments.filter(s => s.speaker === 'Alex').length,\n  jamieSegments: conversationSegments.filter(s => s.speaker === 'Jamie').length,\n  backchannels: conversationSegments.filter(s => s.isBackchannel).length,\n  overlaps: conversationSegments.filter(s => s.isOverlapping).length,\n  interruptions: conversationSegments.filter(s => s.isInterrupted).length,\n  totalDuration: Math.round(conversationSegments.reduce((t, s) => Math.max(t, s.startTime + s.duration), 0))\n};\n\nconsole.log(`🎭 Enhanced script processing complete:`);\nconsole.log(`📊 Segments: ${stats.totalSegments} | Alex: ${stats.alexSegments} | Jamie: ${stats.jamieSegments}`);\nconsole.log(`🎙️ Backchannels: ${stats.backchannels} | Overlaps: ${stats.overlaps} | Interruptions: ${stats.interruptions}`);\nconsole.log(`⏱️ Total duration: ${stats.totalDuration}s`);\n\n// Return enhanced segments with conversation flow data\nreturn conversationSegments.map(s => ({\n  json: {\n    ...s,\n    conversationStats: stats,\n    enhancedTiming: true,\n    naturalFlow: true\n  }\n}));"
+      },
+      "id": "enhanced-script-splitter",
+      "name": "Enhanced Script Splitter",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [896, 608]
+    },
+    {
+      "parameters": {
+        "resource": "speech",
+        "voice": {
+          "__rl": true,
+          "value": "={{ $json.voiceId }}",
+          "mode": "id"
+        },
+        "text": "={{ $json.text }}",
+        "additionalOptions": {
+          "model": {
+            "__rl": true,
+            "value": "eleven_turbo_v2_5",
+            "mode": "list",
+            "cachedResultName": "Eleven Turbo v2.5"
+          },
+          "outputFormat": "mp3_44100_128",
+          "stability": 0.5,
+          "similarityBoost": 0.75,
+          "style": 0.0,
+          "useSpeakerBoost": true
+        },
+        "requestOptions": {}
+      },
+      "id": "enhanced-voice-generator",
+      "name": "Enhanced Voice Generator",
+      "type": "@elevenlabs/n8n-nodes-elevenlabs.elevenLabs",
+      "typeVersion": 1,
+      "position": [1120, 608],
+      "credentials": {
+        "elevenLabsApi": {
+          "id": "3YyCC4lQ4NNtdhiv",
+          "name": "ElevenLabs account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Enhanced audio processing with quality checks\nconst items = $input.all();\nconsole.log(`🎵 Enhanced audio generation complete: ${items.length} segments`);\n\n// Quality validation and optimization\nconst processedItems = [];\nlet totalSize = 0;\n\nfor (let i = 0; i < items.length; i++) {\n  const item = items[i];\n  const binProps = Object.keys(item.binary || {});\n  \n  if (!binProps.length) {\n    console.error(`❌ No binary data on item #${i}`);\n    continue;\n  }\n  \n  const key = binProps[0];\n  const meta = item.binary[key] || {};\n  const fileSize = meta.fileSize || 0;\n  \n  // Quality checks\n  if (fileSize < 1024) {\n    console.warn(`⚠️ Small audio file detected on segment ${i}: ${fileSize} bytes`);\n  }\n  \n  if (fileSize > 1024 * 1024) {\n    console.warn(`⚠️ Large audio file detected on segment ${i}: ${Math.round(fileSize / 1024)}KB`);\n  }\n  \n  totalSize += fileSize;\n  processedItems.push(item);\n}\n\nconsole.log(`📊 Total audio size: ${Math.round(totalSize / 1024)}KB`);\nconsole.log(`✅ Quality validation complete: ${processedItems.length}/${items.length} segments passed`);\n\nreturn processedItems;"
+      },
+      "id": "audio-quality-checker",
+      "name": "Audio Quality Checker",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1344, 608]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Enhanced audio sequencing with timing optimization\nconst items = $input.all();\n\nif (!items || items.length === 0) {\n  throw new Error('No audio segments received');\n}\n\nconsole.log(`🎵 Enhanced audio sequencing for ${items.length} segments`);\n\nasync function getBase64(i) {\n  const binProps = Object.keys(items[i].binary || {});\n  if (!binProps.length) {\n    throw new Error(`No binary data on item #${i}`);\n  }\n  \n  const key = binProps[0];\n  const buf = await this.helpers.getBinaryDataBuffer(i, key);\n  const meta = items[i].binary[key] || {};\n  const name = (meta.fileName || `seg_${i}.mp3`).toLowerCase().replace(/\\s+/g, '_');\n  const fileName = name.endsWith('.mp3') ? name : name.replace(/\\.\\w+$/, '') + '.mp3';  \n  \n  return { \n    base64: buf.toString('base64'), \n    fileName,\n    originalSize: buf.length\n  };\n}\n\n// Sort by enhanced timing\nitems.sort((a,b) => (a.json.startTime ?? a.json.segmentIndex ?? 0) - (b.json.startTime ?? b.json.segmentIndex ?? 0));\n\nconst audioSegments = [];\nlet totalSize = 0;\nlet totalDuration = 0;\n\nfor (let i = 0; i < items.length; i++) {\n  try {\n    const { base64, fileName, originalSize } = await getBase64.call(this, i);\n    const start = items[i].json.startTime ?? 0;\n    const dur = items[i].json.duration ?? 0;\n    const speaker = items[i].json.speaker || 'Unknown';\n    const type = items[i].json.type || 'main_dialogue';\n    \n    audioSegments.push({\n      segmentId: items[i].json.segmentId || `seg_${i}`,\n      speaker: speaker,\n      type: type,\n      startMs: Math.round(start * 1000),\n      durationMs: Math.round(dur * 1000),\n      fileName,\n      dataBase64: base64,\n      isBackchannel: items[i].json.isBackchannel || false,\n      isOverlapping: items[i].json.isOverlapping || false,\n      enhancedTiming: items[i].json.enhancedTiming || false\n    });\n    \n    totalSize += originalSize;\n    totalDuration += dur;\n  } catch (error) {\n    console.error(`❌ Failed to process segment ${i}:`, error.message);\n    throw error;\n  }\n}\n\nconst stats = {\n  totalSegments: audioSegments.length,\n  totalSizeKB: Math.round(totalSize / 1024),\n  totalDuration: Math.round(totalDuration),\n  backchannels: audioSegments.filter(s => s.isBackchannel).length,\n  overlaps: audioSegments.filter(s => s.isOverlapping).length,\n  enhancedTiming: audioSegments.filter(s => s.enhancedTiming).length\n};\n\nconsole.log(`📊 Enhanced sequencing complete:`);\nconsole.log(`🎵 Segments: ${stats.totalSegments} | Duration: ${stats.totalDuration}s`);\nconsole.log(`📁 Size: ${stats.totalSizeKB}KB | Backchannels: ${stats.backchannels} | Overlaps: ${stats.overlaps}`);\n\nreturn [{ json: { audioSegments, stats } }];"
+      },
+      "id": "enhanced-audio-sequencer",
+      "name": "Enhanced Audio Sequencer",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1568, 608]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://n8n-audio-merge.lively-mud-0890.workers.dev",
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "JSON",
+        "body": "={{ $json }}",
+        "options": {
+          "timeout": 120000,
+          "retry": {
+            "enabled": true,
+            "maxAttempts": 3,
+            "waitTime": 5000
+          }
+        }
+      },
+      "id": "enhanced-merge-service",
+      "name": "Enhanced Audio Merge",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1792, 608]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Enhanced response processing with quality validation\nconst input = $input.first();\n\nif (!input || !input.json) {\n  throw new Error('No response data from enhanced merge service');\n}\n\nconsole.log('🎉 Enhanced audio merge successful!');\nconsole.log('📊 Response keys:', Object.keys(input.json));\n\n// Extract processing info\nconst processingInfo = input.json.processingInfo || {};\nconsole.log('⚙️ Processing details:', processingInfo);\n\n// Validate response\nif (input.json.error) {\n  throw new Error(`Enhanced merge error: ${input.json.error}`);\n}\n\nif (!input.json.mergedBase64) {\n  throw new Error('No merged audio data received');\n}\n\nconst base64Data = input.json.mergedBase64;\nconst fileName = input.json.fileName || 'enhanced_podcast.mp3';\nconst fileSizeKB = Math.round(base64Data.length / 1024);\n\nconsole.log(`📁 Enhanced output: ${fileName} (${fileSizeKB}KB)`);\nconsole.log(`✅ Crossfading: ${processingInfo.crossfadeEnabled ? 'Enabled' : 'Disabled'}`);\nconsole.log(`🔊 Volume normalization: ${processingInfo.volumeNormalized ? 'Enabled' : 'Disabled'}`);\n\n// Convert to binary for file creation\nconst binaryData = Buffer.from(base64Data, 'base64');\n\nreturn {\n  json: {\n    fileName,\    fileSize: binaryData.length,\n    fileSizeKB,\n    success: true,\n    enhanced: true,\n    processingInfo,\n    message: `Enhanced podcast generated successfully! (${fileSizeKB}KB)`,\n    timestamp: new Date().toISOString()\n  },\n  binary: {\n    enhanced_podcast: {\n      data: binaryData,\n      fileName: fileName,\n      mimeType: 'audio/mpeg'\n    }\n  }\n};"
+      },
+      "id": "enhanced-response-processor",
+      "name": "Enhanced Response Processor",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2016, 608]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Final enhanced podcast creation\nconst input = $input.first();\nconst fileName = input.json.fileName || 'enhanced_strategic_trends_podcast.mp3';\nconst fileSizeKB = input.json.fileSizeKB || 0;\nconst processingInfo = input.json.processingInfo || {};\n\nconsole.log('🎉 ENHANCED PODCAST GENERATION COMPLETE!');\nconsole.log(`📁 File: ${fileName}`);\nconsole.log(`📊 Size: ${fileSizeKB}KB`);\nconsole.log(`⚙️ Enhanced features: Crossfading=${processingInfo.crossfadeEnabled}, Volume=${processingInfo.volumeNormalized}`);\n\n// Create download link\nconst base64Data = input.binary?.enhanced_podcast?.data?.toString('base64') || '';\nconst downloadUrl = `data:audio/mpeg;base64,${base64Data}`;\n\nreturn {\n  json: {\n    success: true,\n    fileName,\n    fileSizeKB,\n    enhanced: true,\n    processingInfo,\n    message: '🎉 Enhanced Strategic Trends Podcast generated successfully!',\n    downloadUrl,\n    timestamp: new Date().toISOString(),\n    features: [\n      'Enhanced MP3 concatenation',\n      'Crossfading between segments',\n      'Volume normalization',\n      'Natural conversation timing',\n      'Professional audio quality'\n    ]\n  },\n  binary: input.binary || {}\n};"
+      },
+      "id": "enhanced-final-output",
+      "name": "Enhanced Final Output",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2240, 608]
+    }
+  ],
+  "connections": {
+    "Weekly Intelligence Update": {
+      "main": [
+        [
+          {"node": "campaignlive - news", "type": "main", "index": 0},
+          {"node": "campaignlive - latest", "type": "main", "index": 0},
+          {"node": "adweek", "type": "main", "index": 0},
+          {"node": "reddit - advertising", "type": "main", "index": 0},
+          {"node": "reddit - marketing", "type": "main", "index": 0}
+        ]
+      ]
+    },
+    "campaignlive - news": {
+      "main": [ [ {"node": "Merge RSS Sources", "type": "main", "index": 0} ] ]
+    },
+    "campaignlive - latest": {
+      "main": [ [ {"node": "Merge RSS Sources", "type": "main", "index": 1} ] ]
+    },
+    "adweek": {
+      "main": [ [ {"node": "Merge RSS Sources", "type": "main", "index": 2} ] ]
+    },
+    "reddit - advertising": {
+      "main": [ [ {"node": "Merge RSS Sources", "type": "main", "index": 3} ] ]
+    },
+    "reddit - marketing": {
+      "main": [ [ {"node": "Merge RSS Sources", "type": "main", "index": 4} ] ]
+    },
+    "Merge RSS Sources": {
+      "main": [ [ {"node": "Enhanced RSS Formatter", "type": "main", "index": 0} ] ]
+    },
+    "Enhanced RSS Formatter": {
+      "main": [ [ {"node": "Enhanced Script Generator", "type": "main", "index": 0} ] ]
+    },
+    "Enhanced Script Generator": {
+      "main": [ [ {"node": "Enhanced Script Splitter", "type": "main", "index": 0} ] ]
+    },
+    "Enhanced Script Splitter": {
+      "main": [ [ {"node": "Enhanced Voice Generator", "type": "main", "index": 0} ] ]
+    },
+    "Enhanced Voice Generator": {
+      "main": [ [ {"node": "Audio Quality Checker", "type": "main", "index": 0} ] ]
+    },
+    "Audio Quality Checker": {
+      "main": [ [ {"node": "Enhanced Audio Sequencer", "type": "main", "index": 0} ] ]
+    },
+    "Enhanced Audio Sequencer": {
+      "main": [ [ {"node": "Enhanced Audio Merge", "type": "main", "index": 0} ] ]
+    },
+    "Enhanced Audio Merge": {
+      "main": [ [ {"node": "Enhanced Response Processor", "type": "main", "index": 0} ] ]
+    },
+    "Enhanced Response Processor": {
+      "main": [ [ {"node": "Enhanced Final Output", "type": "main", "index": 0} ] ]
+    },
+    "Enhanced Final Output": {
+      "main": [ [] ]
+    }
+  },
+  "active": false,
+  "settings": {},
+  "versionId": "enhanced-v1",
+  "meta": {
+    "instanceId": "enhanced-podcast-workflow"
+  },
+  "id": "enhanced-podcast-workflow",
+  "tags": ["enhanced", "podcast", "assemblyai-inspired"]
+}
