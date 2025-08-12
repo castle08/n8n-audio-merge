@@ -1,0 +1,124 @@
+{
+  "name": "AssemblyAI API Podcast Workflow",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours",
+              "hoursInterval": 168
+            }
+          ]
+        }
+      },
+      "id": "weekly-trigger",
+      "name": "Weekly Intelligence Update",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [-224, 608]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.assemblyai.com/v2/transcript",
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "JSON",
+        "body": "={\n  \"audio_url\": \"https://example.com/audio.mp3\",\n  \"speaker_labels\": true,\n  \"sentiment_analysis\": true,\n  \"auto_highlights\": true,\n  \"entity_detection\": true\n}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "assemblyai-transcript",
+      "name": "AssemblyAI Transcript",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [224, 608],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "assemblyai-credentials",
+          "name": "AssemblyAI API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://api.assemblyai.com/v2/transcript/{{ $json.id }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "assemblyai-poll",
+      "name": "AssemblyAI Poll Status",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [448, 608],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "assemblyai-credentials",
+          "name": "AssemblyAI API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Process AssemblyAI transcript results\nconst transcript = $input.first().json;\n\nif (!transcript) {\n  throw new Error('No transcript data received');\n}\n\nconsole.log('🎤 AssemblyAI transcript analysis complete');\nconsole.log(`📊 Status: ${transcript.status}`);\nconsole.log(`⏱️ Duration: ${transcript.audio_duration}s`);\n\n// Extract conversation insights\nconst insights = {\n  speakers: transcript.speaker_labels?.speakers || [],\n  sentiment: transcript.sentiment_analysis?.results || [],\n  highlights: transcript.auto_highlights?.results || [],\n  entities: transcript.entity_detection?.entities || []\n};\n\n// Analyze conversation patterns\nconst conversationPatterns = {\n  totalSpeakers: insights.speakers.length,\n  sentimentBreakdown: {\n    positive: insights.sentiment.filter(s => s.sentiment === 'POSITIVE').length,\n    negative: insights.sentiment.filter(s => s.sentiment === 'NEGATIVE').length,\n    neutral: insights.sentiment.filter(s => s.sentiment === 'NEUTRAL').length\n  },\n  keyTopics: insights.highlights.map(h => h.text).slice(0, 5),\n  keyEntities: insights.entities.map(e => e.text).slice(0, 5)\n};\n\nconsole.log('🎭 Conversation Analysis:');\nconsole.log(`👥 Speakers: ${conversationPatterns.totalSpeakers}`);\nconsole.log(`🎭 Sentiment: ${JSON.stringify(conversationPatterns.sentimentBreakdown)}`);\nconsole.log(`📝 Key Topics: ${conversationPatterns.keyTopics.join(', ')}`);\n\nreturn [{\n  json: {\n    transcript,\n    insights,\n    conversationPatterns,\n    assemblyaiAnalyzed: true\n  }\n}];"
+      },
+      "id": "assemblyai-processor",
+      "name": "AssemblyAI Processor",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [672, 608]
+    }
+  ],
+  "connections": {
+    "Weekly Intelligence Update": {
+      "main": [
+        [
+          {
+            "node": "AssemblyAI Transcript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AssemblyAI Transcript": {
+      "main": [
+        [
+          {
+            "node": "AssemblyAI Poll Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AssemblyAI Poll Status": {
+      "main": [
+        [
+          {
+            "node": "AssemblyAI Processor",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AssemblyAI Processor": {
+      "main": [
+        []
+      ]
+    }
+  },
+  "active": false,
+  "settings": {},
+  "versionId": "assemblyai-api-v1",
+  "meta": {
+    "instanceId": "assemblyai-api-workflow"
+  },
+  "id": "assemblyai-api-workflow",
+  "tags": ["assemblyai", "api", "transcript", "analysis"]
+}
